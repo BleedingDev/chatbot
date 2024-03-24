@@ -1,11 +1,16 @@
+import type { ChatPromptTemplate } from "@langchain/core/prompts"
+import { pull } from "langchain/hub"
+import { AgentExecutor, createOpenAIFunctionsAgent } from "langchain/agents"
+import { ChatOpenAI } from "@langchain/openai"
 import { TAnyToolDefinitionArray, TToolDefinitionMap } from "@/lib/utils/tool-definition"
-import { OpenAIStream } from "ai"
+import { LangChainStream, OpenAIStream, OpenAIStreamCallbacks } from "ai"
 import type OpenAI from "openai"
 import zodToJsonSchema from "zod-to-json-schema"
 import { type ClassValue, clsx } from "clsx"
 import { twMerge } from "tailwind-merge"
 import { z } from "zod"
 import { RateLimitError } from "openai"
+import { DynamicStructuredTool, StructuredToolInterface } from "@langchain/core/tools"
 
 const consumeStream = async (stream: ReadableStream) => {
   const reader = stream.getReader()
@@ -38,55 +43,88 @@ export function runOpenAICompletion<
 
   let onFunctionCall = {} as any
 
-  const { functions, ...rest } = params
+  const { functions, messages, ...rest } = params
+
+  const aiStreamCallbacks: OpenAIStreamCallbacks = {
+    async experimental_onFunctionCall(functionCallPayload) {
+      hasFunction = true
+
+      if (!onFunctionCall[functionCallPayload.name]) {
+        return
+      }
+
+      // we need to convert arguments from z.input to z.output
+      // this is necessary if someone uses a .default in their schema
+      const zodSchema = functionsMap[functionCallPayload.name].parameters
+      const parsedArgs = zodSchema.safeParse(functionCallPayload.arguments)
+
+      if (!parsedArgs.success) {
+        throw new Error(`Invalid function call in message. Expected a function call object`)
+      }
+
+      onFunctionCall[functionCallPayload.name]?.(parsedArgs.data)
+    },
+    onToken(token) {
+      text += token
+      if (text.startsWith("{")) return
+      onTextContent(text, false)
+    },
+    onFinal() {
+      if (hasFunction) return
+      onTextContent(text, true)
+    },
+  }
 
   ;(async () => {
     try {
-      consumeStream(
-        OpenAIStream(
-          (await openai.chat.completions.create({
-            ...rest,
-            stream: true,
-            functions: functions.map((fn) => ({
-              name: fn.name,
-              description: fn.description,
-              parameters: zodToJsonSchema(fn.parameters) as Record<string, unknown>,
-            })),
-          })) as any,
-          {
-            async experimental_onFunctionCall(functionCallPayload) {
-              hasFunction = true
-
-              if (!onFunctionCall[functionCallPayload.name]) {
-                return
-              }
-
-              // we need to convert arguments from z.input to z.output
-              // this is necessary if someone uses a .default in their schema
-              const zodSchema = functionsMap[functionCallPayload.name].parameters
-              const parsedArgs = zodSchema.safeParse(functionCallPayload.arguments)
-
-              if (!parsedArgs.success) {
-                throw new Error(`Invalid function call in message. Expected a function call object`)
-              }
-
-              onFunctionCall[functionCallPayload.name]?.(parsedArgs.data)
-            },
-            onToken(token) {
-              text += token
-              if (text.startsWith("{")) return
-              onTextContent(text, false)
-            },
-            onFinal() {
-              if (hasFunction) return
-              onTextContent(text, true)
-            },
-          },
-        ),
+      const llm = new ChatOpenAI({
+        streaming: true,
+        temperature: 0,
+      })
+      const prompt = await pull<ChatPromptTemplate>("hwchase17/openai-functions-agent")
+      const tools: StructuredToolInterface[] = functions.map(
+        (fn) =>
+          new DynamicStructuredTool({
+            name: fn.name,
+            description: fn.description || "",
+            schema: fn.parameters,
+            func: (fn as any).func,
+          }),
       )
+
+      const agent = await createOpenAIFunctionsAgent({
+        llm,
+        tools,
+        prompt,
+      })
+
+      const agentExecutor = new AgentExecutor({
+        agent,
+        tools,
+      })
+
+      const stream = await agentExecutor.stream({
+        input: messages.at(-1)?.content,
+        chatHistory: messages.slice(0, -1),
+      })
+
+      const openAiStream = OpenAIStream(
+        (await openai.chat.completions.create({
+          ...rest,
+          messages,
+          stream: true,
+          functions: functions.map((fn) => ({
+            name: fn.name,
+            description: fn.description,
+            parameters: zodToJsonSchema(fn.parameters) as Record<string, unknown>,
+          })),
+        })) as any,
+        aiStreamCallbacks,
+      )
+      consumeStream(stream)
     } catch (e) {
       console.error(e)
-      if (e instanceof RateLimitError) {
+      if (e instanceof Error && e.name === "InsufficientQuotaError") {
         onError("The app has not enough credits, please try again later.")
       } else {
         onError("Unknown error occurred. We're working on it.")
