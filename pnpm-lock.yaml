@@ -56,6 +56,9 @@ dependencies:
   langchain:
     specifier: ^0.1.28
     version: 0.1.28(@vercel/kv@1.0.1)
+  langfuse-langchain:
+    specifier: ^3.3.2
+    version: 3.3.2(langchain@0.1.28)
   next:
     specifier: 14.1.2
     version: 14.1.2(react-dom@18.2.0)(react@18.2.0)
@@ -3373,6 +3376,31 @@ packages:
     resolution: {integrity: sha512-Woyb8YDHgqqTOZvWIbm2CaFDGfZ4NTSyXV687AG4vXEfoNo7cGQp7nhl7wL3ehenKWmNEmcxCLgOZzW8jE6lOQ==}
     dev: false
 
+  /langfuse-core@3.3.2:
+    resolution: {integrity: sha512-YjkVfEsSAEZnjA/8HIx9QgnKNLOxYV1WSxWP8OFN3Wo0P+guVkwFOaVBfKV7cvRjaMTeDUKDzl7+KV4yjSQKIw==}
+    engines: {node: '>=18'}
+    dependencies:
+      mustache: 4.2.0
+    dev: false
+
+  /langfuse-langchain@3.3.2(langchain@0.1.28):
+    resolution: {integrity: sha512-dK7IggwamS+y5rTwQrbQcKEDKBoPs2M5C/Z7LDpRWIdBdv+W+swjC0K1hd0PdzPqpRf8qp6qRheRsICfL40Cig==}
+    engines: {node: '>=18'}
+    peerDependencies:
+      langchain: '>=0.0.157 <0.2.0'
+    dependencies:
+      langchain: 0.1.28(@vercel/kv@1.0.1)
+      langfuse: 3.3.2
+      langfuse-core: 3.3.2
+    dev: false
+
+  /langfuse@3.3.2:
+    resolution: {integrity: sha512-aJHHjhMB3hUGpOowkwNLYakZ6t/TP+iaj0t37ccLZrDPE9u78QTzg6vw4LF9o5dotlga1vjeEf2hRYTSd8+cmQ==}
+    engines: {node: '>=18'}
+    dependencies:
+      langfuse-core: 3.3.2
+    dev: false
+
   /langsmith@0.1.14:
     resolution: {integrity: sha512-iEzQLLB7/0nRpAwNBAR7B7N64fyByg5UsNjSvLaCCkQ9AS68PSafjB8xQkyI8QXXrGjU1dEqDRoa8m4SUuRdUw==}
     dependencies:
@@ -3548,6 +3576,11 @@ packages:
 
   /ms@2.1.3:
     resolution: {integrity: sha512-6FlzubTLZG3J2a/NVCAleEhjzq5oxgHyaCU9yYXvcLsvoVaHJq/s5xXI6/XXP6tz7R9xAOtHnSO/tXtF3WRTlA==}
+
+  /mustache@4.2.0:
+    resolution: {integrity: sha512-71ippSywq5Yb7/tVYyGbkBggbU8H3u5Rz56fH60jGFgr8uHwxs+aSKeqmluIVzM0m0kB7xQjKS6qPfd0b2ZoqQ==}
+    hasBin: true
+    dev: false
 
   /mz@2.7.0:
     resolution: {integrity: sha512-z81GNO7nnYMEhrGh9LeymoE4+Yr0Wn5McHIZMK5cfQCl+NDX08sCZgUc9/6MHni9IWuFLm1Z3HTCXu2z9fN62Q==}

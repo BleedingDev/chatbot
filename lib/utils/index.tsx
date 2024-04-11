@@ -1,16 +1,17 @@
+import { CallbackHandler } from "langfuse-langchain"
 import type { ChatPromptTemplate } from "@langchain/core/prompts"
 import { pull } from "langchain/hub"
 import { AgentExecutor, createOpenAIFunctionsAgent } from "langchain/agents"
 import { ChatOpenAI } from "@langchain/openai"
 import { TAnyToolDefinitionArray, TToolDefinitionMap } from "@/lib/utils/tool-definition"
-import { LangChainStream, OpenAIStream, OpenAIStreamCallbacks } from "ai"
+import { OpenAIStream, OpenAIStreamCallbacks } from "ai"
 import type OpenAI from "openai"
 import zodToJsonSchema from "zod-to-json-schema"
 import { type ClassValue, clsx } from "clsx"
 import { twMerge } from "tailwind-merge"
 import { z } from "zod"
-import { RateLimitError } from "openai"
 import { DynamicStructuredTool, StructuredToolInterface } from "@langchain/core/tools"
+import { BaseCallbackHandler, CallbackHandlerMethods } from "@langchain/core/callbacks/base"
 
 const consumeStream = async (stream: ReadableStream) => {
   const reader = stream.getReader()
@@ -77,6 +78,12 @@ export function runOpenAICompletion<
 
   ;(async () => {
     try {
+      const langfuseLangchainHandler = new CallbackHandler({
+        publicKey: process.env.LANGFUSE_PUBLIC_KEY,
+        secretKey: process.env.LANGFUSE_SECRET_KEY,
+        baseUrl: "https://cloud.langfuse.com",
+      })
+
       const llm = new ChatOpenAI({
         streaming: true,
         temperature: 0,
@@ -103,10 +110,25 @@ export function runOpenAICompletion<
         tools,
       })
 
-      const stream = await agentExecutor.stream({
-        input: messages.at(-1)?.content,
-        chatHistory: messages.slice(0, -1),
-      })
+      const messageHandler: BaseCallbackHandler | CallbackHandlerMethods = {
+        handleLLMNewToken(token) {
+          text += token
+          if (text.startsWith("{")) return
+          onTextContent(text, false)
+        },
+        handleLLMEnd() {
+          if (hasFunction) return
+          onTextContent(text, true)
+        },
+      }
+
+      const stream = await agentExecutor.stream(
+        {
+          input: messages.at(-1)?.content,
+          chatHistory: messages.slice(0, -1),
+        },
+        { callbacks: [messageHandler, langfuseLangchainHandler] },
+      )
 
       const openAiStream = OpenAIStream(
         (await openai.chat.completions.create({
